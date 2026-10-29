@@ -482,12 +482,12 @@ class RadioEngine extends ChangeNotifier {
         _lastMeterRead = now;
         final top = max(v[0], v[1]);
         if (top > -90) _agcRef = top > _agcRef ? top : max(top, _agcRef - 0.4 * dt);
-        final comp = -_agcRef + store.settings.meterOffset;
+        final comp = -_agcRef - 1.5 + store.settings.meterOffset;
         final pl = v[0] <= -90 ? -99.0 : v[0] + comp;
         final pr = v[1] <= -90 ? -99.0 : v[1] + comp;
         // VU-jelleg: a csúcsok ~0,3 mp-es négyzetes átlaga, ahogy egy keverőpult mutatja
         _vuHist.add([_lin(pl), _lin(pr)]);
-        if (_vuHist.length > 9) _vuHist.removeAt(0);
+        if (_vuHist.length > 3) _vuHist.removeAt(0);
         double rms(int c) => sqrt(_vuHist.fold<double>(0, (a, e) => a + e[c] * e[c]) / _vuHist.length);
         levels.rmsL = _db20(rms(0));
         levels.rmsR = _db20(rms(1));
