@@ -7,4 +7,4 @@ late final Store store;
 late final RadioEngine engine;
 late final AlarmService alarms;
 
-const appVersion = '1.0.0';
+const appVersion = '1.0.x (hibanaplóval)';

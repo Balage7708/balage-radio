@@ -44,7 +44,21 @@ class RadioEngine extends ChangeNotifier {
   /// Ha a felület nem látszik, nem mérünk (akkumulátorkímélés).
   bool uiVisible = true;
 
-  Timer? _titleTimer, _meterTimer, _retryTimer, _stallTimer, _fadeTimer;
+  Timer? _titleTimer, _meterTimer, _retryTimer, _stallTimer, _fadeTimer, _watchdog;
+
+  /// Hibanapló a Beállításokban (mpv üzenetek, csatlakozások).
+  final List<String> log = [];
+  String lastError = '';
+  bool _audioFlowing = false;
+  Duration _lastPos = Duration.zero;
+  DateTime _lastProgress = DateTime.now();
+
+  void _log(String m) {
+    final t = DateTime.now();
+    String two(int v) => v.toString().padLeft(2, '0');
+    log.add('${two(t.hour)}:${two(t.minute)}:${two(t.second)}  $m');
+    if (log.length > 400) log.removeRange(0, log.length - 400);
+  }
   int _retry = 0;
   bool _meterBusy = false;
   bool _buffering = false, _playing = false;
@@ -88,11 +102,26 @@ class RadioEngine extends ChangeNotifier {
     _subs.add(player.stream.buffering.listen((b) {
       _buffering = b;
       _updateState();
-      _stallTimer?.cancel();
-      if (b && want) _stallTimer = Timer(const Duration(seconds: 15), () => _reconnect('Elakadt'));
     }));
+    _subs.add(player.stream.position.listen((p) {
+      if (p > _lastPos) {
+        _lastProgress = DateTime.now();
+        if (!_audioFlowing) {
+          _audioFlowing = true;
+          _log('Hang érkezik (${current?.name})');
+          _updateState();
+        }
+      }
+      _lastPos = p;
+    }));
+    // A hibákat csak naplózzuk: az mpv sok átmeneti hibát jelez, ami nem állítja le a lejátszást.
+    // Újracsatlakozni a figyelő (watchdog) dönt, ha tényleg nem jön hang.
     _subs.add(player.stream.error.listen((e) {
-      if (want) _reconnect('Hiba');
+      lastError = e;
+      _log('HIBA: $e');
+    }));
+    _subs.add(player.stream.log.listen((l) {
+      _log('[${l.level}] ${l.prefix}: ${l.text.trim()}');
     }));
     _subs.add(player.stream.completed.listen((c) {
       if (c && want) _reconnect('Megszakadt');
@@ -135,11 +164,9 @@ class RadioEngine extends ChangeNotifier {
 
   void _updateState() {
     if (!want) return;
-    final s = _buffering
-        ? PlayState.buffering
-        : _playing
-            ? PlayState.playing
-            : PlayState.connecting;
+    final s = _playing && _audioFlowing && !_buffering
+        ? PlayState.playing
+        : (_buffering && _audioFlowing ? PlayState.buffering : PlayState.connecting);
     if (s == PlayState.playing) {
       _retry = 0;
       _stallTimer?.cancel();
@@ -199,16 +226,34 @@ class RadioEngine extends ChangeNotifier {
     if (current == null) return;
     state = PlayState.connecting;
     status = 'Kapcsolódás…';
+    _audioFlowing = false;
+    _lastPos = Duration.zero;
+    _lastProgress = DateTime.now();
+    lastError = '';
     notifyListeners();
+    _log('Megnyitás: ${current!.name} – ${current!.url}');
+    _startWatchdog();
     try {
       await player.open(Media(current!.url), play: true);
-    } catch (_) {
-      _reconnect('Hiba');
+    } catch (e) {
+      lastError = '$e';
+      _log('Megnyitási hiba: $e');
     }
+  }
+
+  /// Ha 20 mp-ig nem halad a lejátszás, újracsatlakozik.
+  void _startWatchdog() {
+    _watchdog?.cancel();
+    _watchdog = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!want || state == PlayState.reconnecting) return;
+      final idle = DateTime.now().difference(_lastProgress).inSeconds;
+      if (idle >= 20) _reconnect(_audioFlowing ? 'Elakadt' : 'Nem érkezik hang');
+    });
   }
 
   Future<void> stop() async {
     want = false;
+    _watchdog?.cancel();
     _retryTimer?.cancel();
     _stallTimer?.cancel();
     _fadeTimer?.cancel();
@@ -240,7 +285,8 @@ class RadioEngine extends ChangeNotifier {
     _retry++;
     final sec = min(30, 1 << min(_retry, 5));
     state = PlayState.reconnecting;
-    status = '$reason – újra $sec mp múlva…';
+    status = '$reason – újra $sec mp múlva…${lastError.isNotEmpty ? ' ($lastError)' : ''}';
+    _log('Újracsatlakozás: $reason, $sec mp múlva');
     notifyListeners();
     _retryTimer = Timer(Duration(seconds: sec), () {
       state = PlayState.connecting;
@@ -327,7 +373,10 @@ class RadioEngine extends ChangeNotifier {
     if (s.meter) parts.add('@vu:lavfi=[astats=metadata=1:reset=1]');
     try {
       await _np.setProperty('af', parts.join(','));
-    } catch (_) {}
+      _log('Szűrők: ${parts.isEmpty ? '(nincs)' : parts.join(', ')}');
+    } catch (e) {
+      _log('Szűrő hiba: $e');
+    }
     _updateMeterTimer();
   }
 

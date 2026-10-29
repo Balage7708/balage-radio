@@ -215,7 +215,12 @@ class _PlayerCardState extends State<PlayerCard> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ListenableBuilder(
+        listenable: Listenable.merge([engine, store]),
+        builder: (context, _) => _card(context),
+      );
+
+  Widget _card(BuildContext context) {
     _ensureTick();
     final st = engine.current;
     final wide = widget.wide;

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -192,6 +193,35 @@ class _SettingsPageState extends State<SettingsPage> {
                   icon: const Icon(Icons.restart_alt),
                   label: const Text('Alaplista'),
                 ),
+              ]),
+              const SizedBox(height: 6),
+            ]),
+            _section('Hibanapló', [
+              const Text('Ha valami nem működik, másold ki a naplót, és küldd el.', style: TextStyle(color: BC.muted, fontSize: 13)),
+              const SizedBox(height: 8),
+              Container(
+                height: 160,
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: BC.navyDeep, borderRadius: BorderRadius.circular(4), border: Border.all(color: BC.line)),
+                child: SingleChildScrollView(
+                  reverse: true,
+                  child: SelectableText(
+                    engine.log.isEmpty ? '(üres)' : engine.log.skip(engine.log.length > 60 ? engine.log.length - 60 : 0).join('\n'),
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: BC.muted),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(spacing: 8, children: [
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.copy, size: 18),
+                  label: const Text('Napló másolása'),
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: engine.log.join('\n')));
+                    toast(context, 'Napló a vágólapon');
+                  },
+                ),
+                OutlinedButton.icon(icon: const Icon(Icons.refresh, size: 18), label: const Text('Frissítés'), onPressed: () => setState(() {})),
               ]),
               const SizedBox(height: 6),
             ]),
