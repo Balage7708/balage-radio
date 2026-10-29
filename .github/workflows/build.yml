@@ -26,6 +26,8 @@ jobs:
           cache: true
       - name: Generate missing platform files
         run: flutter create --platforms=android --org hu.balagedrone --project-name balage_radio .
+      - name: Patch Android
+        run: python3 ci/patch_android.py 2>&1 | tee -a ci-android.log
       - run: flutter pub get
       - name: Analyze
         run: |
