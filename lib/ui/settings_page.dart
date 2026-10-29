@@ -96,6 +96,12 @@ class _SettingsPageState extends State<SettingsPage> {
           constraints: const BoxConstraints(maxWidth: 720),
           child: ListView(padding: const EdgeInsets.all(16), children: [
             _section('Kivezérlésjelző', [
+              if (!engine.meterSupported)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 6),
+                  child: Text('A lejátszómotor ezen a gépen nem támogatja a szintmérést, ezért a jelző rejtve marad.',
+                      style: TextStyle(color: BC.warn, fontSize: 12)),
+                ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Két soros LED-es kivezérlésjelző (L / R)'),
@@ -118,6 +124,12 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ]),
             _section('Hangszín', [
+              if (!engine.eqSupported)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 6),
+                  child: Text('A lejátszómotor ezen a gépen nem támogatja a hangszínszabályzót, ezért az app kihagyja.',
+                      style: TextStyle(color: BC.warn, fontSize: 12)),
+                ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Hangszínszabályzó'),

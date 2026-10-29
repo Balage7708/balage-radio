@@ -87,6 +87,9 @@ class RadioEngine extends ChangeNotifier {
       'demuxer-readahead-secs': '10',
       'stream-lavf-o': 'reconnect=1,reconnect_streamed=1,reconnect_delay_max=10',
       'audio-buffer': '0.3',
+      'cache-on-disk': 'no',
+      'audio-display': 'no',
+      'vid': 'no',
     };
     for (final kv in opts.entries) {
       try {
@@ -108,6 +111,7 @@ class RadioEngine extends ChangeNotifier {
         _lastProgress = DateTime.now();
         if (!_audioFlowing) {
           _audioFlowing = true;
+          _filterFails = 0;
           _log('Hang érkezik (${current?.name})');
           _updateState();
         }
@@ -122,6 +126,13 @@ class RadioEngine extends ChangeNotifier {
     }));
     _subs.add(player.stream.log.listen((l) {
       _log('[${l.level}] ${l.prefix}: ${l.text.trim()}');
+      // Ha a lejátszómotorból hiányzik egy szűrő, kihagyjuk, és újraindítjuk a lejátszást nélküle.
+      final m = RegExp(r"No such filter: '([\w]+)'").firstMatch(l.text);
+      if (m != null && missingFilters.add(m.group(1)!)) _refilterSoon();
+      if (l.text.contains('Audio filter initialized failed')) {
+        _filterFails++;
+        _refilterSoon();
+      }
     }));
     _subs.add(player.stream.completed.listen((c) {
       if (c && want) _reconnect('Megszakadt');
@@ -359,18 +370,49 @@ class RadioEngine extends ChangeNotifier {
 
   // ---------- szűrők: hangszín + LED-jelző ----------
 
+  /// A lejátszómotorból hiányzó szűrők (futás közben derül ki).
+  final Set<String> missingFilters = {};
+  bool _filtersBroken = false;
+  int _filterFails = 0;
+  Timer? _refilterTimer;
+
+  void _refilterSoon() {
+    _refilterTimer?.cancel();
+    _refilterTimer = Timer(const Duration(milliseconds: 400), () async {
+      // ha a hibát nem egy konkrét szűrőnév okozta, biztonságból minden szűrőt kikapcsolunk
+      if (missingFilters.isEmpty || _filterFails >= 3) _filtersBroken = true;
+      await applyFilters();
+      if (want) await _open();
+    });
+  }
+
+  bool _has(List<String> names) => !_filtersBroken && names.every((n) => !missingFilters.contains(n));
+
+  bool get eqSupported => _has(const ['equalizer']);
+  bool get meterSupported => _has(const ['astats']);
+
   Future<void> applyFilters() async {
     final s = store.settings;
     final parts = <String>[];
     if (s.eq.on) {
-      parts.add('@eq:lavfi=[bass=g=${s.eq.low}:f=180:w=0.7,'
-          'equalizer=f=1200:t=q:w=0.9:g=${s.eq.mid},'
-          'treble=g=${s.eq.high}:f=4500:w=0.7]');
+      if (_has(const ['bass', 'equalizer', 'treble'])) {
+        parts.add('@eq:lavfi=[bass=g=${s.eq.low}:f=180:w=0.7,'
+            'equalizer=f=1200:t=q:w=0.9:g=${s.eq.mid},'
+            'treble=g=${s.eq.high}:f=4500:w=0.7]');
+      } else if (_has(const ['equalizer'])) {
+        parts.add('@eq:lavfi=[equalizer=f=150:t=q:w=0.8:g=${s.eq.low},'
+            'equalizer=f=1200:t=q:w=0.9:g=${s.eq.mid},'
+            'equalizer=f=6000:t=q:w=0.8:g=${s.eq.high}]');
+      }
       if (s.eq.norm) {
-        parts.add('@norm:lavfi=[acompressor=threshold=0.08:ratio=4:attack=10:release=300:makeup=2]');
+        if (_has(const ['acompressor'])) {
+          parts.add('@norm:lavfi=[acompressor=threshold=0.08:ratio=4:attack=10:release=300:makeup=2]');
+        } else if (_has(const ['dynaudnorm'])) {
+          parts.add('@norm:lavfi=[dynaudnorm=f=250:g=15]');
+        }
       }
     }
-    if (s.meter) parts.add('@vu:lavfi=[astats=metadata=1:reset=1]');
+    if (s.meter && _has(const ['astats'])) parts.add('@vu:lavfi=[astats=metadata=1:reset=1]');
     try {
       await _np.setProperty('af', parts.join(','));
       _log('Szűrők: ${parts.isEmpty ? '(nincs)' : parts.join(', ')}');

@@ -10,7 +10,8 @@ dependencies:
   flutter:
     sdk: flutter
   media_kit: ^1.1.11
-  media_kit_libs_audio: ^1.0.5
+  # teljes mpv/FFmpeg (a hangszín- és mérőszűrők miatt; az „audio” változatból hiányoznak)
+  media_kit_libs_video: ^1.0.5
   audio_service: ^0.18.15
   audio_session: ^0.1.21
   file_picker: ^10.3.2

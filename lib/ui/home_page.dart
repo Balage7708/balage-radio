@@ -343,7 +343,7 @@ class _PlayerCardState extends State<PlayerCard> {
             const SizedBox(width: 14),
             Expanded(child: meta),
           ]),
-        if (store.settings.meter) ...[
+        if (store.settings.meter && engine.meterSupported) ...[
           const SizedBox(height: 16),
           const LedMeter(),
         ],
