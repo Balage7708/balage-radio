@@ -65,7 +65,7 @@ class _LedMeterState extends State<LedMeter> with SingleTickerProviderStateMixin
         s.pk = pk;
         s.hold = now + const Duration(milliseconds: 1200);
       } else if (now > s.hold) {
-        s.pk = max(-99, s.pk - 14 * dt);
+        s.pk = max(-99.0, s.pk - 14 * dt);
       }
       if (s.lvl > -60 || s.pk > -60) moving = true;
     }
@@ -104,8 +104,8 @@ class _MeterPainter extends CustomPainter {
   final bool showScale, peakHold;
 
   static const n = 32, floor = 50.0, curve = 1.35;
-  static double dbAt(int i) => -floor * pow(1 - (i + 1) / n, curve);
-  static double posOf(double db) => (1 - pow(min(floor, max(0, -db)) / floor, 1 / curve)) * n;
+  static double dbAt(int i) => -floor * pow(1 - (i + 1) / n, curve).toDouble();
+  static double posOf(double db) => (1 - pow(min(floor, max(0.0, -db)) / floor, 1 / curve).toDouble()) * n;
   static Color colorOf(double db) =>
       db > -3 ? const Color(0xFFFF4634) : (db > -9 ? const Color(0xFFFFB840) : const Color(0xFF7ED65C));
 
@@ -158,7 +158,7 @@ class _MeterPainter extends CustomPainter {
         tp.text = TextSpan(text: db == 0 ? '0 dB' : '$db', style: const TextStyle(color: Color(0xFF6F8290), fontSize: 9, fontWeight: FontWeight.w500));
         tp.layout();
         var x = x0 + posOf(db.toDouble()) * pitch - (pitch - ledW) / 2 - tp.width / 2 - (db == 0 ? 6 : 0);
-        x = x.clamp(x0, size.width - tp.width);
+        x = x.clamp(x0, size.width - tp.width).toDouble();
         tp.paint(canvas, Offset(x, sy));
       }
     }
