@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'icy.dart';
+import 'native_meter.dart';
 import 'models.dart';
 import 'radio_browser.dart';
 import 'store.dart';
@@ -376,7 +377,14 @@ class RadioEngine extends ChangeNotifier {
   // ---------- szűrők: hangszín + LED-jelző ----------
 
   /// A lejátszómotorból hiányzó szűrők (futás közben derül ki).
-  final Set<String> missingFilters = {};
+  /// A beépített mpv-ből ezek a szűrők ismerten hiányoznak (a media_kit FFmpeg-je
+  /// csak az „equalizer”-t tartalmazza), ezért ki sem próbáljuk őket.
+  final Set<String> missingFilters = {'bass', 'treble', 'acompressor', 'dynaudnorm', 'astats'};
+
+  /// Windowson / Androidon a rendszer hangszintmérője adja a LED-jelző adatait.
+  final NativeMeter? nativeMeter = NativeMeter.create();
+  String get meterStatus => nativeMeter?.status ?? '';
+  String _lastMeterStatus = '';
   bool _filtersBroken = false;
   int _filterFails = 0;
   bool _namedMissing = false;
@@ -395,7 +403,8 @@ class RadioEngine extends ChangeNotifier {
   bool _has(List<String> names) => !_filtersBroken && names.every((n) => !missingFilters.contains(n));
 
   bool get eqSupported => _has(const ['equalizer']);
-  bool get meterSupported => _has(const ['astats']);
+  bool get meterSupported => nativeMeter != null || _has(const ['astats']);
+  bool get normSupported => _has(const ['acompressor']) || _has(const ['dynaudnorm']);
 
   Future<void> applyFilters() async {
     final s = store.settings;
@@ -418,7 +427,7 @@ class RadioEngine extends ChangeNotifier {
         }
       }
     }
-    if (s.meter && _has(const ['astats'])) parts.add('@vu:lavfi=[astats=metadata=1:reset=1]');
+    if (s.meter && nativeMeter == null && _has(const ['astats'])) parts.add('@vu:lavfi=[astats=metadata=1:reset=1]');
     try {
       await _np.setProperty('af', parts.join(','));
       _log('Szűrők: ${parts.isEmpty ? '(nincs)' : parts.join(', ')}');
@@ -436,6 +445,7 @@ class RadioEngine extends ChangeNotifier {
       _meterTimer?.cancel();
       _meterTimer = null;
       levels.silence();
+      nativeMeter?.stop();
     }
   }
 
@@ -450,6 +460,24 @@ class RadioEngine extends ChangeNotifier {
     if (_meterBusy) return;
     _meterBusy = true;
     try {
+      final nm = nativeMeter;
+      if (nm != null) {
+        final v = await nm.read();
+        if (nm.status != _lastMeterStatus) {
+          _lastMeterStatus = nm.status;
+          _log('Szintmérő: ${nm.status}');
+        }
+        if (v == null) return;
+        // A rendszer a hangerő utáni szintet méri; az mpv köbös hangerő-görbéjét visszaszámoljuk,
+        // hogy a jelző a hangerőtől függetlenül az adás szintjét mutassa.
+        final vol = max(1.0, player.state.volume);
+        final comp = -60 * log(vol / 100) / ln10;
+        levels.peakL = v[0] + comp;
+        levels.peakR = v[1] + comp;
+        levels.rmsL = levels.peakL;
+        levels.rmsR = levels.peakR;
+        return;
+      }
       final raw = await _np.getProperty('af-metadata/vu');
       double? rl, rr, pl, pr;
       for (final m in _astats.allMatches(raw)) {

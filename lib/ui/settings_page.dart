@@ -96,6 +96,18 @@ class _SettingsPageState extends State<SettingsPage> {
           constraints: const BoxConstraints(maxWidth: 720),
           child: ListView(padding: const EdgeInsets.all(16), children: [
             _section('Kivezérlésjelző', [
+              if (Platform.isAndroid)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 6),
+                  child: Text(
+                      'Androidon a jelzőhöz a „Mikrofon / hangfelvétel” engedély kell: ezzel olvassa a lejátszott hang szintjét, felvételt nem készít.',
+                      style: TextStyle(color: BC.muted, fontSize: 12)),
+                ),
+              if (engine.meterStatus.isNotEmpty && !engine.meterStatus.startsWith('ok'))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text('Szintmérő: ${engine.meterStatus}', style: const TextStyle(color: BC.warn, fontSize: 12)),
+                ),
               if (!engine.meterSupported)
                 const Padding(
                   padding: EdgeInsets.only(bottom: 6),
@@ -142,6 +154,7 @@ class _SettingsPageState extends State<SettingsPage> {
               _eqSlider('Mély', eq.low, (v) => setState(() => eq.low = v)),
               _eqSlider('Közép', eq.mid, (v) => setState(() => eq.mid = v)),
               _eqSlider('Magas', eq.high, (v) => setState(() => eq.high = v)),
+              if (engine.normSupported)
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Hangerő-kiegyenlítés (adók és dalok között)'),

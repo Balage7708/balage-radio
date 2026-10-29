@@ -1,6 +1,76 @@
 package hu.balagedrone.balage_radio
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.media.audiofx.Visualizer
 import com.ryanheise.audioservice.AudioServiceActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
 
 // Az audio_service miatt (háttérlejátszás, értesítés, zárolt képernyő) ebből kell származnia.
-class MainActivity : AudioServiceActivity()
+// A "balage/meter" csatorna a LED-jelzőnek adja a lejátszott hang szintjét (Visualizer).
+class MainActivity : AudioServiceActivity() {
+    private var viz: Visualizer? = null
+    private var askedPermission = false
+    private val m = Visualizer.MeasurementPeakRms()
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "balage/meter").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "start" -> result.success(startMeter())
+                "stop" -> {
+                    stopMeter()
+                    result.success(null)
+                }
+                "read" -> {
+                    val v = viz
+                    if (v == null) {
+                        result.success(null)
+                    } else {
+                        try {
+                            v.getMeasurementPeakRms(m)
+                            result.success(listOf(m.mPeak, m.mRms))
+                        } catch (e: Exception) {
+                            result.success(null)
+                        }
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    private fun startMeter(): String {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            if (!askedPermission) {
+                askedPermission = true
+                requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 77)
+            }
+            return "Engedély szükséges (Mikrofon)"
+        }
+        if (viz != null) return "ok"
+        return try {
+            val v = Visualizer(0)
+            v.measurementMode = Visualizer.MEASUREMENT_MODE_PEAK_RMS
+            v.enabled = true
+            viz = v
+            "ok"
+        } catch (e: Exception) {
+            "Visualizer hiba: ${e.message}"
+        }
+    }
+
+    private fun stopMeter() {
+        try {
+            viz?.release()
+        } catch (_: Exception) {
+        }
+        viz = null
+    }
+
+    override fun onDestroy() {
+        stopMeter()
+        super.onDestroy()
+    }
+}
