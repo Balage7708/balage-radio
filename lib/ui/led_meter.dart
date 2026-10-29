@@ -60,12 +60,12 @@ class _LedMeterState extends State<LedMeter> with SingleTickerProviderStateMixin
       final s = _ch[c];
       final rms = raw[c][0], pk = raw[c][1];
       // gyors felfutás, ~24 dB/s visszaesés
-      s.lvl = rms > s.lvl ? s.lvl + (rms - s.lvl) * 0.8 : max(rms, s.lvl - 30 * dt);
+      s.lvl = rms > s.lvl ? s.lvl + (rms - s.lvl) * 0.8 : max(rms, s.lvl - 12 * dt);
       if (pk >= s.pk) {
         s.pk = pk;
         s.hold = now + const Duration(milliseconds: 1200);
       } else if (now > s.hold) {
-        s.pk = max(-99.0, s.pk - 14 * dt);
+        s.pk = max(-99.0, s.pk - 6 * dt);
       }
       if (s.lvl > -60 || s.pk > -60) moving = true;
     }
@@ -104,11 +104,11 @@ class _MeterPainter extends CustomPainter {
   final bool showScale, peakHold;
 
   // -30…0 dB egyenletes skála: a tömörített rádióhangnál is jól látható mozgás
-  static const n = 32, floor = 30.0, curve = 1.0;
+  static const n = 32, floor = 12.0, curve = 1.0;
   static double dbAt(int i) => -floor * pow(1 - (i + 1) / n, curve).toDouble();
   static double posOf(double db) => (1 - pow(min(floor, max(0.0, -db)) / floor, 1 / curve).toDouble()) * n;
   static Color colorOf(double db) =>
-      db > -3 ? const Color(0xFFFF4634) : (db > -9 ? const Color(0xFFFFB840) : const Color(0xFF7ED65C));
+      db > -2 ? const Color(0xFFFF4634) : (db > -5 ? const Color(0xFFFFB840) : const Color(0xFF7ED65C));
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -155,7 +155,7 @@ class _MeterPainter extends CustomPainter {
     }
     if (showScale) {
       final sy = 2 * rowH + gap + 1;
-      for (final db in [-30, -20, -12, -6, -3, 0]) {
+      for (final db in [-12, -9, -6, -3, 0]) {
         tp.text = TextSpan(text: db == 0 ? '0 dB' : '$db', style: const TextStyle(color: Color(0xFF6F8290), fontSize: 9, fontWeight: FontWeight.w500));
         tp.layout();
         var x = x0 + posOf(db.toDouble()) * pitch - (pitch - ledW) / 2 - tp.width / 2 - (db == 0 ? 6 : 0);
