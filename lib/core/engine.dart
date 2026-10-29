@@ -471,7 +471,7 @@ class RadioEngine extends ChangeNotifier {
         // A rendszer a hangerő utáni szintet méri; az mpv köbös hangerő-görbéjét visszaszámoljuk,
         // hogy a jelző a hangerőtől függetlenül az adás szintjét mutassa.
         final vol = max(1.0, player.state.volume);
-        final comp = -60 * log(vol / 100) / ln10;
+        final comp = -60 * _log10(vol / 100);
         levels.peakL = v[0] + comp;
         levels.peakR = v[1] + comp;
         levels.rmsL = levels.peakL;
@@ -583,3 +583,6 @@ class RadioEngine extends ChangeNotifier {
     super.dispose();
   }
 }
+
+/// Tízes alapú logaritmus (a dart:math `log`-ját az osztály `log` mezője elfedné).
+double _log10(num x) => log(x) / ln10;
