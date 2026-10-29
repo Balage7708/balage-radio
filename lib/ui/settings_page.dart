@@ -129,9 +129,9 @@ class _SettingsPageState extends State<SettingsPage> {
                 Expanded(
                   child: Slider(
                     value: s.meterOffset.toDouble(),
-                    min: -24,
-                    max: 6,
-                    divisions: 30,
+                    min: -12,
+                    max: 12,
+                    divisions: 24,
                     onChanged: s.meter ? (v) => setState(() => s.meterOffset = v.round()) : null,
                     onChangeEnd: (_) => _save(),
                   ),

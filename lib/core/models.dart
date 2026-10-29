@@ -127,7 +127,7 @@ class AppSettings {
   bool peakHold = true;
 
   /// A LED-jelző érzékenysége (dB): negatív = kevesebb LED világít.
-  int meterOffset = -9;
+  int meterOffset = 0;
   bool recordPerSong = false;
   String lastStationId = '';
   final EqSettings eq = EqSettings();
@@ -137,7 +137,7 @@ class AppSettings {
         'volume': volume,
         'meter': meter,
         'peak': peakHold,
-        'meterOff': meterOffset,
+        'meterOff2': meterOffset,
         'recPerSong': recordPerSong,
         'last': lastStationId,
         'eq': eq.toJson(),
@@ -147,7 +147,7 @@ class AppSettings {
     volume = (j['volume'] as num?)?.toInt() ?? 85;
     meter = j['meter'] != false;
     peakHold = j['peak'] != false;
-    meterOffset = (j['meterOff'] as num?)?.toInt() ?? -9;
+    meterOffset = (j['meterOff2'] as num?)?.toInt() ?? 0;
     recordPerSong = j['recPerSong'] == true;
     lastStationId = (j['last'] ?? '').toString();
     if (j['eq'] is Map) eq.load(Map<String, dynamic>.from(j['eq'] as Map));

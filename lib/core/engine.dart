@@ -386,6 +386,8 @@ class RadioEngine extends ChangeNotifier {
   String get meterStatus => nativeMeter?.status ?? '';
   String _lastMeterStatus = '';
   final List<List<double>> _vuHist = [];
+  double _agcRef = -20;
+  DateTime? _lastMeterRead;
   static double _lin(double db) => db <= -99 ? 0 : pow(10, db / 20).toDouble();
   static double _db20(double lin) => lin > 0.0000001 ? 20 * _log10(lin) : -99.0;
   bool _filtersBroken = false;
@@ -471,11 +473,17 @@ class RadioEngine extends ChangeNotifier {
           _log('Szintmérő: ${nm.status}');
         }
         if (v == null) return;
-        // A rendszer a hangerő utáni szintet méri; az mpv köbös hangerő-görbéjét visszaszámoljuk,
-        // hogy a jelző a hangerőtől függetlenül az adás szintjét mutassa.
-        final vol = max(1.0, player.state.volume);
-        final comp = -60 * _log10(vol / 100) + store.settings.meterOffset;
-        final pl = v[0] + comp, pr = v[1] + comp;
+        // Automatikus szintbeállítás: a közelmúlt legnagyobb csúcsa (lassan csökkenő burkoló)
+        // lesz a skála teteje, így a jelző a hangerő-csúszkától és a mérési módtól függetlenül
+        // ugyanúgy mozog. Az érzékenység-állító ehhez képest tolja el.
+        final now = DateTime.now();
+        final dt = _lastMeterRead == null ? 0.033 : now.difference(_lastMeterRead!).inMicroseconds / 1e6;
+        _lastMeterRead = now;
+        final top = max(v[0], v[1]);
+        if (top > -90) _agcRef = top > _agcRef ? top : max(top, _agcRef - 0.4 * dt);
+        final comp = -_agcRef + store.settings.meterOffset;
+        final pl = v[0] <= -90 ? -99.0 : v[0] + comp;
+        final pr = v[1] <= -90 ? -99.0 : v[1] + comp;
         // VU-jelleg: a csúcsok ~0,3 mp-es négyzetes átlaga, ahogy egy keverőpult mutatja
         _vuHist.add([_lin(pl), _lin(pr)]);
         if (_vuHist.length > 9) _vuHist.removeAt(0);
