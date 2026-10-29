@@ -1,0 +1,460 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:math';
+
+import 'package:audio_session/audio_session.dart';
+import 'package:flutter/foundation.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
+import 'icy.dart';
+import 'models.dart';
+import 'radio_browser.dart';
+import 'store.dart';
+
+enum PlayState { stopped, connecting, buffering, playing, reconnecting }
+
+/// A kivezérlésjelző nyers mérései (dBFS), ~30-szor másodpercenként frissül.
+class MeterLevels {
+  double rmsL = -99, rmsR = -99, peakL = -99, peakR = -99;
+  void silence() => rmsL = rmsR = peakL = peakR = -99;
+}
+
+/// A lejátszómotor: mpv (media_kit) alapú. Közvetlenül játssza le a streamet,
+/// az mpv szűrőláncából jön a hangszín és a LED-jelző, a stream-record a felvétel.
+class RadioEngine extends ChangeNotifier {
+  RadioEngine(this.store);
+  final Store store;
+
+  late final Player player;
+  NativePlayer get _np => player.platform as NativePlayer;
+
+  Station? current;
+  bool want = false;
+  PlayState state = PlayState.stopped;
+  String status = '';
+  String nowTitle = '';
+  final MeterLevels levels = MeterLevels();
+
+  bool recording = false;
+  String? recordingPath;
+  DateTime? recordingSince;
+
+  /// Ha a felület nem látszik, nem mérünk (akkumulátorkímélés).
+  bool uiVisible = true;
+
+  Timer? _titleTimer, _meterTimer, _retryTimer, _stallTimer, _fadeTimer;
+  int _retry = 0;
+  bool _meterBusy = false;
+  bool _buffering = false, _playing = false;
+  bool _resumeAfterInterruption = false;
+  bool _ducked = false;
+  AudioSession? _session;
+  final _subs = <StreamSubscription>[];
+
+  String get songTitle {
+    final i = nowTitle.indexOf(' - ');
+    return i > 0 ? nowTitle.substring(i + 3).trim() : nowTitle;
+  }
+
+  String get artist {
+    final i = nowTitle.indexOf(' - ');
+    return i > 0 ? nowTitle.substring(0, i).trim() : '';
+  }
+
+  Future<void> init() async {
+    player = Player(configuration: const PlayerConfiguration(title: 'Balage Rádió', logLevel: MPVLogLevel.warn));
+    const opts = {
+      'user-agent': 'BalageRadio/1.0',
+      'network-timeout': '15',
+      'cache': 'yes',
+      'cache-secs': '20',
+      'demuxer-readahead-secs': '10',
+      'stream-lavf-o': 'reconnect=1,reconnect_streamed=1,reconnect_delay_max=10',
+      'audio-buffer': '0.3',
+    };
+    for (final kv in opts.entries) {
+      try {
+        await _np.setProperty(kv.key, kv.value);
+      } catch (_) {}
+    }
+    await player.setVolume(store.settings.volume.toDouble());
+
+    _subs.add(player.stream.playing.listen((v) {
+      _playing = v;
+      _updateState();
+    }));
+    _subs.add(player.stream.buffering.listen((b) {
+      _buffering = b;
+      _updateState();
+      _stallTimer?.cancel();
+      if (b && want) _stallTimer = Timer(const Duration(seconds: 15), () => _reconnect('Elakadt'));
+    }));
+    _subs.add(player.stream.error.listen((e) {
+      if (want) _reconnect('Hiba');
+    }));
+    _subs.add(player.stream.completed.listen((c) {
+      if (c && want) _reconnect('Megszakadt');
+    }));
+    await applyFilters();
+
+    if (Platform.isAndroid) {
+      try {
+        final s = await AudioSession.instance;
+        await s.configure(const AudioSessionConfiguration.music());
+        _session = s;
+        _subs.add(s.interruptionEventStream.listen(_onInterruption));
+        _subs.add(s.becomingNoisyEventStream.listen((_) => stop()));
+      } catch (_) {}
+    }
+  }
+
+  void _onInterruption(AudioInterruptionEvent e) {
+    if (e.begin) {
+      if (e.type == AudioInterruptionType.duck) {
+        if (want) {
+          _ducked = true;
+          player.setVolume(store.settings.volume * 0.3);
+        }
+      } else if (want) {
+        _resumeAfterInterruption = e.type == AudioInterruptionType.pause;
+        stop();
+      }
+    } else {
+      if (_ducked) {
+        _ducked = false;
+        player.setVolume(store.settings.volume.toDouble());
+      }
+      if (_resumeAfterInterruption) {
+        _resumeAfterInterruption = false;
+        resume();
+      }
+    }
+  }
+
+  void _updateState() {
+    if (!want) return;
+    final s = _buffering
+        ? PlayState.buffering
+        : _playing
+            ? PlayState.playing
+            : PlayState.connecting;
+    if (s == PlayState.playing) {
+      _retry = 0;
+      _stallTimer?.cancel();
+    }
+    if (state == PlayState.reconnecting && s != PlayState.playing) return;
+    if (s != state) {
+      state = s;
+      status = switch (s) {
+        PlayState.playing => 'Élő',
+        PlayState.buffering => 'Pufferelés…',
+        PlayState.connecting => 'Kapcsolódás…',
+        _ => status,
+      };
+      notifyListeners();
+    }
+  }
+
+  // ---------- lejátszás ----------
+
+  Future<void> play(Station st, {bool keepVolume = false}) async {
+    if (!st.hasUrl) {
+      status = 'Ennek az adónak még nincs stream-címe.';
+      notifyListeners();
+      return;
+    }
+    if (current?.id != st.id) {
+      await stopRecording();
+      nowTitle = '';
+    }
+    current = st;
+    want = true;
+    _retry = 0;
+    if (!keepVolume) {
+      _fadeTimer?.cancel();
+      _ducked = false;
+      await player.setVolume(store.settings.volume.toDouble());
+    }
+    if (store.byId(st.id) != null) {
+      store.settings.lastStationId = st.id;
+      store.saveSettings();
+    }
+    try {
+      await _session?.setActive(true);
+    } catch (_) {}
+    await _open();
+    _startTitlePolling();
+    _updateMeterTimer();
+  }
+
+  Future<void> resume() async {
+    final st = current ?? store.byId(store.settings.lastStationId) ?? store.stations.where((s) => s.hasUrl).firstOrNull;
+    if (st != null) await play(st);
+  }
+
+  Future<void> _open() async {
+    _retryTimer?.cancel();
+    if (current == null) return;
+    state = PlayState.connecting;
+    status = 'Kapcsolódás…';
+    notifyListeners();
+    try {
+      await player.open(Media(current!.url), play: true);
+    } catch (_) {
+      _reconnect('Hiba');
+    }
+  }
+
+  Future<void> stop() async {
+    want = false;
+    _retryTimer?.cancel();
+    _stallTimer?.cancel();
+    _fadeTimer?.cancel();
+    _titleTimer?.cancel();
+    await stopRecording();
+    try {
+      await player.stop();
+    } catch (_) {}
+    state = PlayState.stopped;
+    status = '';
+    levels.silence();
+    _updateMeterTimer();
+    notifyListeners();
+  }
+
+  Future<void> toggle() => want ? stop() : resume();
+
+  Future<void> step(int d) async {
+    final list = store.stations.where((s) => s.hasUrl).toList();
+    if (list.isEmpty) return;
+    final i = current == null ? -1 : list.indexWhere((s) => s.id == current!.id);
+    await play(list[(i + d + list.length) % list.length]);
+  }
+
+  void _reconnect(String reason) {
+    if (!want || current == null) return;
+    _retryTimer?.cancel();
+    _stallTimer?.cancel();
+    _retry++;
+    final sec = min(30, 1 << min(_retry, 5));
+    state = PlayState.reconnecting;
+    status = '$reason – újra $sec mp múlva…';
+    notifyListeners();
+    _retryTimer = Timer(Duration(seconds: sec), () {
+      state = PlayState.connecting;
+      _open();
+    });
+  }
+
+  Future<void> setVolume(int v) async {
+    store.settings.volume = v.clamp(0, 100);
+    store.saveSettings();
+    if (!_ducked) await player.setVolume(store.settings.volume.toDouble());
+  }
+
+  /// Ébresztéshez: halkan indul, majd felhangosodik.
+  Future<void> playWithFade(Station st, int targetVolume, int minutes) async {
+    _fadeTimer?.cancel();
+    await player.setVolume(3);
+    await play(st, keepVolume: true);
+    if (minutes <= 0) {
+      await player.setVolume(targetVolume.toDouble());
+      return;
+    }
+    final start = DateTime.now();
+    final total = minutes * 60;
+    _fadeTimer = Timer.periodic(const Duration(seconds: 2), (t) {
+      final f = DateTime.now().difference(start).inSeconds / total;
+      final v = (3 + (targetVolume - 3) * f.clamp(0, 1)).toDouble();
+      player.setVolume(v);
+      if (f >= 1) {
+        t.cancel();
+        store.settings.volume = targetVolume;
+        store.saveSettings();
+      }
+    });
+  }
+
+  // ---------- „most szól” ----------
+
+  void _startTitlePolling() {
+    _titleTimer?.cancel();
+    _pollTitle();
+    _titleTimer = Timer.periodic(const Duration(seconds: 12), (_) => _pollTitle());
+  }
+
+  Future<void> _pollTitle() async {
+    final st = current;
+    if (st == null || !want) return;
+    final t = await IcyReader.fetchTitle(st.url);
+    if (st != current || !want) return;
+    await _setTitle(t);
+  }
+
+  bool _isJunk(String t, Station st) {
+    final n = RadioBrowser.norm(t);
+    return n.length < 3 || n == RadioBrowser.norm(st.name) || RegExp(r'^(unknown|nincscim|live|elo|adv|reklam|hirek?)$').hasMatch(n);
+  }
+
+  Future<void> _setTitle(String raw) async {
+    var t = raw.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (current == null || _isJunk(t, current!)) t = '';
+    if (t == nowTitle) return;
+    nowTitle = t;
+    if (t.isNotEmpty) store.addHistory(current!.id, t);
+    notifyListeners();
+    if (recording && store.settings.recordPerSong && t.isNotEmpty) {
+      await stopRecording();
+      await startRecording();
+    }
+  }
+
+  // ---------- szűrők: hangszín + LED-jelző ----------
+
+  Future<void> applyFilters() async {
+    final s = store.settings;
+    final parts = <String>[];
+    if (s.eq.on) {
+      parts.add('@eq:lavfi=[bass=g=${s.eq.low}:f=180:w=0.7,'
+          'equalizer=f=1200:t=q:w=0.9:g=${s.eq.mid},'
+          'treble=g=${s.eq.high}:f=4500:w=0.7]');
+      if (s.eq.norm) {
+        parts.add('@norm:lavfi=[acompressor=threshold=0.08:ratio=4:attack=10:release=300:makeup=2]');
+      }
+    }
+    if (s.meter) parts.add('@vu:lavfi=[astats=metadata=1:reset=1]');
+    try {
+      await _np.setProperty('af', parts.join(','));
+    } catch (_) {}
+    _updateMeterTimer();
+  }
+
+  void _updateMeterTimer() {
+    final run = want && store.settings.meter && uiVisible;
+    if (run && _meterTimer == null) {
+      _meterTimer = Timer.periodic(const Duration(milliseconds: 33), (_) => _readMeter());
+    } else if (!run) {
+      _meterTimer?.cancel();
+      _meterTimer = null;
+      levels.silence();
+    }
+  }
+
+  void setUiVisible(bool v) {
+    uiVisible = v;
+    _updateMeterTimer();
+  }
+
+  static final _astats = RegExp(r'lavfi\.astats\.(\d)\.(RMS_level|Peak_level)"?\s*[:=]\s*"?(-?inf|-?[0-9.]+)');
+
+  Future<void> _readMeter() async {
+    if (_meterBusy) return;
+    _meterBusy = true;
+    try {
+      final raw = await _np.getProperty('af-metadata/vu');
+      double? rl, rr, pl, pr;
+      for (final m in _astats.allMatches(raw)) {
+        final v = m.group(3)!.contains('inf') ? -99.0 : (double.tryParse(m.group(3)!) ?? -99.0);
+        final ch = m.group(1);
+        final isRms = m.group(2) == 'RMS_level';
+        if (ch == '1') {
+          if (isRms) {
+            rl = v;
+          } else {
+            pl = v;
+          }
+        } else if (ch == '2') {
+          if (isRms) {
+            rr = v;
+          } else {
+            pr = v;
+          }
+        }
+      }
+      if (rl != null) {
+        // RMS + 3 dB ≈ szinuszos jelnél a csúcsértékhez igazítva, mint a klasszikus jelzőkön
+        levels.rmsL = rl + 3;
+        levels.rmsR = (rr ?? rl) + 3;
+        levels.peakL = pl ?? rl;
+        levels.peakR = pr ?? pl ?? rl;
+      }
+    } catch (_) {
+    } finally {
+      _meterBusy = false;
+    }
+  }
+
+  // ---------- felvétel ----------
+
+  static Future<Directory> recordingsDir() async {
+    Directory base;
+    if (Platform.isWindows) {
+      final home = Platform.environment['USERPROFILE'];
+      base = Directory(home != null
+          ? p.join(home, 'Music', 'Balage Rádió')
+          : p.join((await getApplicationDocumentsDirectory()).path, 'Balage Rádió'));
+    } else {
+      final ext = await getExternalStorageDirectory();
+      base = Directory(p.join((ext ?? await getApplicationDocumentsDirectory()).path, 'Felvetelek'));
+    }
+    await base.create(recursive: true);
+    return base;
+  }
+
+  static String _safe(String s) => s.replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1f]'), '').replaceAll(RegExp(r'\s+'), ' ').trim();
+
+  Future<void> startRecording() async {
+    final st = current;
+    if (st == null || !want) return;
+    final dir = await recordingsDir();
+    var codec = '';
+    try {
+      codec = (await _np.getProperty('audio-codec-name')).toLowerCase();
+    } catch (_) {}
+    if (codec.isEmpty) codec = st.codec.toLowerCase();
+    final ext = codec.contains('aac')
+        ? 'aac'
+        : (codec.contains('vorbis') || codec.contains('opus'))
+            ? 'ogg'
+            : 'mp3';
+    final now = DateTime.now();
+    String two(int v) => v.toString().padLeft(2, '0');
+    final stamp = '${now.year}-${two(now.month)}-${two(now.day)} ${two(now.hour)}.${two(now.minute)}.${two(now.second)}';
+    final label = store.settings.recordPerSong && nowTitle.isNotEmpty ? nowTitle : st.name;
+    var name = _safe(label == st.name ? '${st.name} ($stamp)' : '$label – ${st.name} ($stamp)');
+    if (name.length > 150) name = name.substring(0, 150);
+    final path = p.join(dir.path, '$name.$ext');
+    try {
+      await _np.setProperty('stream-record', path);
+      recording = true;
+      recordingPath = path;
+      recordingSince = now;
+    } catch (_) {
+      recording = false;
+    }
+    notifyListeners();
+  }
+
+  Future<void> stopRecording() async {
+    if (!recording) return;
+    try {
+      await _np.setProperty('stream-record', '');
+    } catch (_) {}
+    recording = false;
+    recordingSince = null;
+    notifyListeners();
+  }
+
+  Future<void> toggleRecording() => recording ? stopRecording() : startRecording();
+
+  @override
+  void dispose() {
+    for (final s in _subs) {
+      s.cancel();
+    }
+    player.dispose();
+    super.dispose();
+  }
+}
