@@ -42,7 +42,7 @@ class IcyReader {
       final metaint = int.tryParse(res.headers.value('icy-metaint') ?? '') ?? 0;
       if (res.statusCode != 200 || metaint <= 0) {
         finish('');
-        return done.future;
+        return await done.future;
       }
       final buf = BytesBuilder(copy: false);
       var pos = metaint;
