@@ -387,6 +387,7 @@ class RadioEngine extends ChangeNotifier {
   String _lastMeterStatus = '';
   final List<List<double>> _vuHist = [];
   double _agcRef = -20;
+  DateTime? _dbgT;
   DateTime? _lastMeterRead;
   static double _lin(double db) => db <= -99 ? 0 : pow(10, db / 20).toDouble();
   static double _db20(double lin) => lin > 0.0000001 ? 20 * _log10(lin) : -99.0;
@@ -492,6 +493,11 @@ class RadioEngine extends ChangeNotifier {
         levels.rmsR = _db20(rms(1));
         levels.peakL = pl;
         levels.peakR = pr;
+        if (_dbgT == null || now.difference(_dbgT!).inMilliseconds >= 2000) {
+          _dbgT = now;
+          String f(double x) => x.toStringAsFixed(1);
+          _log('Szint: nyers L=${f(v[0])} R=${f(v[1])} dB · referencia=${f(_agcRef)} · sáv L=${f(levels.rmsL)} csúcs L=${f(pl)} · minták=${_vuHist.length}');
+        }
         return;
       }
       final raw = await _np.getProperty('af-metadata/vu');
