@@ -128,8 +128,12 @@ class RadioEngine extends ChangeNotifier {
       _log('[${l.level}] ${l.prefix}: ${l.text.trim()}');
       // Ha a lejátszómotorból hiányzik egy szűrő, kihagyjuk, és újraindítjuk a lejátszást nélküle.
       final m = RegExp(r"No such filter: '([\w]+)'").firstMatch(l.text);
-      if (m != null && missingFilters.add(m.group(1)!)) _refilterSoon();
-      if (l.text.contains('Audio filter initialized failed')) {
+      if (m != null) {
+        _namedMissing = true;
+        if (missingFilters.add(m.group(1)!)) _refilterSoon();
+      }
+      // csak az ismeretlen okú szűrőhibákat számoljuk; a hiányzó szűrőt már fent kihagytuk
+      if (l.text.contains('Audio filter initialized failed') && !_namedMissing) {
         _filterFails++;
         _refilterSoon();
       }
@@ -242,6 +246,7 @@ class RadioEngine extends ChangeNotifier {
     _lastProgress = DateTime.now();
     lastError = '';
     notifyListeners();
+    _namedMissing = false;
     _log('Megnyitás: ${current!.name} – ${current!.url}');
     _startWatchdog();
     try {
@@ -374,13 +379,14 @@ class RadioEngine extends ChangeNotifier {
   final Set<String> missingFilters = {};
   bool _filtersBroken = false;
   int _filterFails = 0;
+  bool _namedMissing = false;
   Timer? _refilterTimer;
 
   void _refilterSoon() {
     _refilterTimer?.cancel();
     _refilterTimer = Timer(const Duration(milliseconds: 400), () async {
       // ha a hibát nem egy konkrét szűrőnév okozta, biztonságból minden szűrőt kikapcsolunk
-      if (missingFilters.isEmpty || _filterFails >= 3) _filtersBroken = true;
+      if (_filterFails >= 2) _filtersBroken = true;
       await applyFilters();
       if (want) await _open();
     });
