@@ -123,6 +123,20 @@ class _SettingsPageState extends State<SettingsPage> {
                   _save(filters: true);
                 },
               ),
+              Row(children: [
+                const SizedBox(width: 110, child: Text('Érzékenység', style: TextStyle(color: BC.muted))),
+                SizedBox(width: 54, child: Text('${s.meterOffset} dB', style: const TextStyle(fontSize: 12))),
+                Expanded(
+                  child: Slider(
+                    value: s.meterOffset.toDouble(),
+                    min: -24,
+                    max: 6,
+                    divisions: 30,
+                    onChanged: s.meter ? (v) => setState(() => s.meterOffset = v.round()) : null,
+                    onChangeEnd: (_) => _save(),
+                  ),
+                ),
+              ]),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Csúcsérték-tartás'),

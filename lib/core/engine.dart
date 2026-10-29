@@ -385,6 +385,9 @@ class RadioEngine extends ChangeNotifier {
   final NativeMeter? nativeMeter = NativeMeter.create();
   String get meterStatus => nativeMeter?.status ?? '';
   String _lastMeterStatus = '';
+  final List<List<double>> _vuHist = [];
+  static double _lin(double db) => db <= -99 ? 0 : pow(10, db / 20).toDouble();
+  static double _db20(double lin) => lin > 0.0000001 ? 20 * _log10(lin) : -99.0;
   bool _filtersBroken = false;
   int _filterFails = 0;
   bool _namedMissing = false;
@@ -471,11 +474,16 @@ class RadioEngine extends ChangeNotifier {
         // A rendszer a hangerő utáni szintet méri; az mpv köbös hangerő-görbéjét visszaszámoljuk,
         // hogy a jelző a hangerőtől függetlenül az adás szintjét mutassa.
         final vol = max(1.0, player.state.volume);
-        final comp = -60 * _log10(vol / 100);
-        levels.peakL = v[0] + comp;
-        levels.peakR = v[1] + comp;
-        levels.rmsL = levels.peakL;
-        levels.rmsR = levels.peakR;
+        final comp = -60 * _log10(vol / 100) + store.settings.meterOffset;
+        final pl = v[0] + comp, pr = v[1] + comp;
+        // VU-jelleg: a csúcsok ~0,3 mp-es négyzetes átlaga, ahogy egy keverőpult mutatja
+        _vuHist.add([_lin(pl), _lin(pr)]);
+        if (_vuHist.length > 9) _vuHist.removeAt(0);
+        double rms(int c) => sqrt(_vuHist.fold<double>(0, (a, e) => a + e[c] * e[c]) / _vuHist.length);
+        levels.rmsL = _db20(rms(0));
+        levels.rmsR = _db20(rms(1));
+        levels.peakL = pl;
+        levels.peakR = pr;
         return;
       }
       final raw = await _np.getProperty('af-metadata/vu');
