@@ -130,6 +130,15 @@ class AppSettings {
   int meterOffset = 0;
   bool recordPerSong = false;
   String lastStationId = '';
+
+  /// Autós mód: 'auto' (Androidon fekvő, széles képernyőn), 'on', 'off'
+  String carMode = 'auto';
+
+  /// Indításkor folytassa az utoljára hallgatott adót.
+  bool resumeOnStart = false;
+
+  /// Androidon: induljon el magától a fejegység bekapcsolásakor.
+  bool autoStartBoot = false;
   final EqSettings eq = EqSettings();
   final AlarmSettings alarm = AlarmSettings();
 
@@ -140,6 +149,9 @@ class AppSettings {
         'meterOff2': meterOffset,
         'recPerSong': recordPerSong,
         'last': lastStationId,
+        'carMode': carMode,
+        'resume': resumeOnStart,
+        'autoStartBoot': autoStartBoot,
         'eq': eq.toJson(),
         'alarm': alarm.toJson(),
       };
@@ -150,6 +162,9 @@ class AppSettings {
     meterOffset = (j['meterOff2'] as num?)?.toInt() ?? 0;
     recordPerSong = j['recPerSong'] == true;
     lastStationId = (j['last'] ?? '').toString();
+    carMode = (j['carMode'] ?? 'auto').toString();
+    resumeOnStart = j['resume'] == true;
+    autoStartBoot = j['autoStartBoot'] == true;
     if (j['eq'] is Map) eq.load(Map<String, dynamic>.from(j['eq'] as Map));
     if (j['alarm'] is Map) alarm.load(Map<String, dynamic>.from(j['alarm'] as Map));
   }

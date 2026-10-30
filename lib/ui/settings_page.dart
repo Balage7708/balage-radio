@@ -95,6 +95,53 @@ class _SettingsPageState extends State<SettingsPage> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 720),
           child: ListView(padding: const EdgeInsets.all(16), children: [
+            _section('Autós mód', [
+              const Text('Nagy gombok és betűk fejegységre (pl. 9"-os, fekvő képernyő). A kormánygombok (előző / következő adó, '
+                  'lejátszás) automatikusan működnek.', style: TextStyle(color: BC.muted, fontSize: 13)),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                value: s.carMode,
+                decoration: const InputDecoration(labelText: 'Megjelenés', isDense: true),
+                items: const [
+                  DropdownMenuItem(value: 'auto', child: Text('Automatikus (Androidon fekvő képernyőn)')),
+                  DropdownMenuItem(value: 'on', child: Text('Mindig autós mód')),
+                  DropdownMenuItem(value: 'off', child: Text('Soha')),
+                ],
+                onChanged: (v) {
+                  s.carMode = v ?? 'auto';
+                  _save();
+                },
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Indításkor folytassa az utolsó adót'),
+                value: s.resumeOnStart,
+                onChanged: (v) {
+                  s.resumeOnStart = v;
+                  _save();
+                },
+              ),
+              if (Platform.isAndroid)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Automatikus indítás a fejegység bekapcsolásakor'),
+                  subtitle: const Text(
+                      'Gyújtásráadáskor elindul és szól az utolsó adó. Ehhez engedélyezd a „Megjelenítés más alkalmazások fölött” jogot. '
+                      'Ha így sem indul, a fejegység saját beállításaiban (Autóbeállítások / Indítási alkalmazás) is kiválaszthatod.',
+                      style: TextStyle(color: BC.muted, fontSize: 12)),
+                  value: s.autoStartBoot,
+                  onChanged: (v) async {
+                    s.autoStartBoot = v;
+                    if (v) s.resumeOnStart = true;
+                    _save();
+                    if (v) {
+                      try {
+                        await const MethodChannel('balage/system').invokeMethod('requestOverlay');
+                      } catch (_) {}
+                    }
+                  },
+                ),
+            ]),
             _section('Kivezérlésjelző', [
               if (Platform.isAndroid)
                 const Padding(

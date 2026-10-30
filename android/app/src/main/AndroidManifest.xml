@@ -12,6 +12,8 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- LED-jelző: a lejátszott hang szintjének olvasása (Visualizer), felvételt nem készít -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- automatikus indítás bekapcsoláskor (Android 10+ ehhez kéri) -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
     <application
@@ -54,6 +56,15 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Automatikus indítás a fejegység bekapcsolásakor -->
+        <receiver android:name=".BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
 

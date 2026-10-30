@@ -80,12 +80,14 @@ class RadioEngine extends ChangeNotifier {
 
   Future<void> init() async {
     player = Player(configuration: const PlayerConfiguration(title: 'Balage Rádió', logLevel: MPVLogLevel.warn));
-    const opts = {
+    final opts = {
       'user-agent': 'BalageRadio/1.0',
       'network-timeout': '15',
       'cache': 'yes',
-      'cache-secs': '20',
-      'demuxer-readahead-secs': '10',
+      // autóban (alagút, mobilnet) nagyobb puffer, hogy rövid kiesésnél se álljon meg a zene
+      'cache-secs': Platform.isAndroid ? '45' : '20',
+      'demuxer-readahead-secs': Platform.isAndroid ? '30' : '10',
+      'demuxer-max-bytes': '12MiB',
       'stream-lavf-o': 'reconnect=1,reconnect_streamed=1,reconnect_delay_max=10',
       'audio-buffer': '0.3',
       'cache-on-disk': 'no',

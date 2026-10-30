@@ -57,7 +57,11 @@ Future<void> main() async {
   runApp(const BalageRadioApp());
 
   WidgetsBinding.instance.addPostFrameCallback((_) async {
-    if (alarms.launchedByAlarm) await alarms.fire();
+    if (alarms.launchedByAlarm) {
+      await alarms.fire();
+    } else if (store.settings.resumeOnStart || Platform.isAndroid && store.settings.autoStartBoot) {
+      await engine.resume();
+    }
     await store.resolvePending();
   });
 }

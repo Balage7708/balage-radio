@@ -1,8 +1,12 @@
 package hu.balagedrone.balage_radio
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.audiofx.Visualizer
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -16,6 +20,20 @@ class MainActivity : AudioServiceActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "balage/system").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "requestOverlay" -> {
+                    if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) {
+                        try {
+                            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                        } catch (_: Exception) {
+                        }
+                    }
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "balage/meter").setMethodCallHandler { call, result ->
             when (call.method) {
                 "start" -> result.success(startMeter())
