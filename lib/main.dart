@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -15,11 +17,45 @@ import 'ui/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final earlyErrors = <String>[];
+  FlutterError.onError = (d) {
+    FlutterError.presentError(d);
+    final m = 'FLUTTER HIBA: ${d.exceptionAsString()}\n${d.stack.toString().split('\n').take(6).join('\n')}';
+    try {
+      engine.addLog(m);
+    } catch (_) {
+      earlyErrors.add(m);
+    }
+  };
+  PlatformDispatcher.instance.onError = (e, st) {
+    final m = 'HIBA: $e\n${st.toString().split('\n').take(6).join('\n')}';
+    try {
+      engine.addLog(m);
+    } catch (_) {
+      earlyErrors.add(m);
+    }
+    return true;
+  };
   MediaKit.ensureInitialized();
 
   store = await Store.load();
   engine = RadioEngine(store);
-  await engine.init();
+  for (final m in earlyErrors) {
+    engine.addLog(m);
+  }
+  try {
+    await engine.init();
+  } catch (e) {
+    engine.addLog('Lejátszómotor indítási hiba: $e');
+  }
+  if (Platform.isAndroid) {
+    try {
+      final crash = await const MethodChannel('balage/system').invokeMethod<String>('previousCrash');
+      if (crash != null && crash.trim().isNotEmpty) {
+        engine.addLog('--- ELŐZŐ ÖSSZEOMLÁS (rendszernapló) ---\n${crash.trim()}\n--- vége ---');
+      }
+    } catch (_) {}
+  }
 
   if (Platform.isAndroid) {
     try {

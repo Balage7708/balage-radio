@@ -54,6 +54,8 @@ class RadioEngine extends ChangeNotifier {
   Duration _lastPos = Duration.zero;
   DateTime _lastProgress = DateTime.now();
 
+  void addLog(String m) => _log(m);
+
   void _log(String m) {
     final t = DateTime.now();
     String two(int v) => v.toString().padLeft(2, '0');

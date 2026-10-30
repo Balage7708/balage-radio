@@ -77,7 +77,7 @@ class _AddStationState extends State<_AddStation> with SingleTickerProviderState
       setState(() => _results = out);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = 'A rádió-adatbázis most nem érhető el. Próbáld újra kicsit később.');
+      setState(() => _error = '$e'.replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _loading = false);
     }

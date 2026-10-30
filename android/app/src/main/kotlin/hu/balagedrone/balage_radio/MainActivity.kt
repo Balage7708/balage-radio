@@ -22,6 +22,30 @@ class MainActivity : AudioServiceActivity() {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "balage/system").setMethodCallHandler { call, result ->
             when (call.method) {
+                "previousCrash" -> {
+                    // Az előző futás összeomlásának nyomai a rendszernaplóból (csak a saját app sorai láthatók).
+                    Thread {
+                        val out = StringBuilder()
+                        try {
+                            val p = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "time", "-t", "3000"))
+                            val lines = p.inputStream.bufferedReader().readLines()
+                            val idx = lines.indexOfLast {
+                                it.contains("Fatal signal") || it.contains("FATAL EXCEPTION") || it.contains("Abort message")
+                            }
+                            if (idx >= 0) {
+                                val from = maxOf(0, idx - 25)
+                                val to = minOf(lines.size, idx + 40)
+                                for (i in from until to) {
+                                    val l = lines[i]
+                                    if (l.contains(" E/") || l.contains(" F/") || l.contains(" W/") || i == idx) out.append(l).append('\n')
+                                }
+                            }
+                        } catch (e: Exception) {
+                            out.append("logcat hiba: ").append(e.message)
+                        }
+                        runOnUiThread { result.success(out.toString()) }
+                    }.start()
+                }
                 "requestOverlay" -> {
                     if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) {
                         try {

@@ -45,6 +45,8 @@ TextStyle label({Color color = BC.oliveLight, double size = 11}) =>
 ThemeData buildTheme() {
   final base = ThemeData(
     useMaterial3: true,
+    // Az alapértelmezett „InkSparkle” shader egyes olcsó fejegység-GPU-kon összeomlást okoz.
+    splashFactory: InkRipple.splashFactory,
     brightness: Brightness.dark,
     colorScheme: const ColorScheme.dark(
       primary: BC.olive,

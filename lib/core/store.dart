@@ -15,13 +15,34 @@ class Store extends ChangeNotifier {
   final AppSettings settings = AppSettings();
   final List<HistoryEntry> history = [];
 
+  /// Ellenőrzött stream-címek (így az első induláshoz nem kell az online adatbázis).
+  static const knownUrls = {
+    'MegaDance Rádió': 'https://gamershouse.hu:8080/livemega.mp3',
+    'Rádió 1': 'https://icast.connectmedia.hu/5201/live.mp3',
+    'Retro Rádió': 'https://icast.connectmedia.hu/5001/live.mp3',
+  };
+
   static List<Station> defaults() => [
-        Station(id: newId(), name: 'MegaDance Rádió', query: 'megadance', homepage: 'https://megadanceradio.hu'),
-        Station(id: newId(), name: 'Rádió 1', query: 'Rádió 1', homepage: 'https://radio1.hu'),
+        Station(
+            id: newId(),
+            name: 'MegaDance Rádió',
+            url: knownUrls['MegaDance Rádió']!,
+            query: 'megadance',
+            codec: 'MP3',
+            bitrate: 192,
+            homepage: 'https://megadanceradio.hu'),
+        Station(
+            id: newId(),
+            name: 'Rádió 1',
+            url: knownUrls['Rádió 1']!,
+            query: 'Rádió 1',
+            codec: 'MP3',
+            bitrate: 128,
+            homepage: 'https://radio1.hu'),
         Station(
             id: newId(),
             name: 'Retro Rádió',
-            url: 'https://icast.connectmedia.hu/5001/live.mp3',
+            url: knownUrls['Retro Rádió']!,
             query: 'Retro Rádió',
             codec: 'MP3',
             bitrate: 128,
@@ -41,6 +62,16 @@ class Store extends ChangeNotifier {
     } catch (_) {
       s.stations.addAll(defaults());
     }
+    // korábbi telepítés: ha egy alapadónak még nincs címe, kitöltjük az ismert címmel
+    var fixed = false;
+    for (final st in s.stations) {
+      final known = knownUrls[st.name];
+      if (!st.hasUrl && known != null) {
+        st.url = known;
+        fixed = true;
+      }
+    }
+    if (fixed) s.saveStations();
     try {
       final raw = p.getString('settings');
       if (raw != null) s.settings.load(Map<String, dynamic>.from(jsonDecode(raw) as Map));

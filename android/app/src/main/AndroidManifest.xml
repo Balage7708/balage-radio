@@ -83,6 +83,10 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Régebbi / gyengébb GPU-s fejegységek: a kompatibilis OpenGL rajzolót használja -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
     </application>
 
     <queries>

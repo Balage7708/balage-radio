@@ -9,9 +9,10 @@ import 'models.dart';
 class RadioBrowser {
   static const _hosts = [
     'de1.api.radio-browser.info',
+    'de2.api.radio-browser.info',
+    'fi1.api.radio-browser.info',
     'nl1.api.radio-browser.info',
     'at1.api.radio-browser.info',
-    'de2.api.radio-browser.info',
   ];
   static const _ua = {'User-Agent': 'BalageRadio/1.0'};
 
@@ -29,7 +30,14 @@ class RadioBrowser {
         lastErr = e;
       }
     }
-    throw Exception('A rádió-adatbázis most nem érhető el${lastErr != null ? '' : ''}');
+    final e = '$lastErr';
+    if (e.contains('CERTIFICATE') || e.contains('Handshake')) {
+      throw Exception('Biztonságos kapcsolat hiba – ellenőrizd, hogy pontos-e a készülék dátuma és ideje.');
+    }
+    if (e.contains('SocketException') || e.contains('host lookup')) {
+      throw Exception('Nincs internetkapcsolat (vagy a névfeloldás nem működik).');
+    }
+    throw Exception('A rádió-adatbázis most nem érhető el ($e)');
   }
 
   static Future<List<Map<String, dynamic>>> search(String query,
