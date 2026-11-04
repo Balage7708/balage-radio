@@ -51,13 +51,8 @@
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
-        <receiver
-            android:name="com.ryanheise.audioservice.MediaButtonReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MEDIA_BUTTON" />
-            </intent-filter>
-        </receiver>
+        <!-- Szándékosan nincs MediaButtonReceiver: a fejegység bekapcsoláskor médiagomb-jelet küld,
+             ami Android 8-on az app leállását okozta („startForegroundService … did not call startForeground”). -->
 
         <!-- Automatikus indítás a fejegység bekapcsolásakor -->
         <receiver android:name=".BootReceiver" android:exported="true">
