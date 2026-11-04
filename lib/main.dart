@@ -40,6 +40,8 @@ Future<void> main() async {
 
   store = await Store.load();
   engine = RadioEngine(store);
+  await engine.openLogFile();
+  engine.addLog('Indulás – ${Platform.operatingSystem} ${Platform.operatingSystemVersion}');
   for (final m in earlyErrors) {
     engine.addLog(m);
   }
@@ -58,6 +60,7 @@ Future<void> main() async {
   }
 
   if (Platform.isAndroid) {
+    engine.addLog('háttérszolgáltatás (audio_service) indítása');
     try {
       await AudioService.init(
         builder: () => RadioAudioHandler(engine),
@@ -69,7 +72,10 @@ Future<void> main() async {
           androidStopForegroundOnPause: true,
         ),
       );
-    } catch (_) {}
+      engine.addLog('háttérszolgáltatás kész');
+    } catch (e) {
+      engine.addLog('háttérszolgáltatás hiba: $e');
+    }
   }
 
   if (Platform.isWindows) {

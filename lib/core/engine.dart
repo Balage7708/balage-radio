@@ -59,8 +59,34 @@ class RadioEngine extends ChangeNotifier {
   void _log(String m) {
     final t = DateTime.now();
     String two(int v) => v.toString().padLeft(2, '0');
-    log.add('${two(t.hour)}:${two(t.minute)}:${two(t.second)}  $m');
+    final line = '${two(t.hour)}:${two(t.minute)}:${two(t.second)}  $m';
+    log.add(line);
     if (log.length > 400) log.removeRange(0, log.length - 400);
+    // azonnal fájlba is, hogy egy összeomlás után is meglegyen, meddig jutott
+    try {
+      _logFile?.writeAsStringSync('$line\n', mode: FileMode.append, flush: true);
+    } catch (_) {}
+  }
+
+  File? _logFile;
+
+  /// Megnyitja a tartós naplófájlt, és beolvassa az előző futás utolsó sorait.
+  Future<void> openLogFile() async {
+    try {
+      final dir = await getApplicationSupportDirectory();
+      final f = File(p.join(dir.path, 'naplo.txt'));
+      if (await f.exists()) {
+        final lines = (await f.readAsLines());
+        final tail = lines.length > 60 ? lines.sublist(lines.length - 60) : lines;
+        if (tail.isNotEmpty) {
+          log.add('--- ELŐZŐ FUTÁS UTOLSÓ SORAI ---');
+          log.addAll(tail);
+          log.add('--- mostani futás ---');
+        }
+      }
+      await f.writeAsString('');
+      _logFile = f;
+    } catch (_) {}
   }
   int _retry = 0;
   bool _meterBusy = false;
@@ -228,12 +254,19 @@ class RadioEngine extends ChangeNotifier {
       store.settings.lastStationId = st.id;
       store.saveSettings();
     }
+    _log('LÉPÉS 1: audio fókusz kérése');
     try {
       await _session?.setActive(true);
-    } catch (_) {}
+    } catch (e) {
+      _log('audio fókusz hiba: $e');
+    }
+    _log('LÉPÉS 2: lejátszó megnyitása');
     await _open();
+    _log('LÉPÉS 3: cím-lekérdezés indítása');
     _startTitlePolling();
+    _log('LÉPÉS 4: szintmérő (${store.settings.meter ? 'be' : 'ki'})');
     _updateMeterTimer();
+    _log('LÉPÉS 5: kész');
   }
 
   Future<void> resume() async {

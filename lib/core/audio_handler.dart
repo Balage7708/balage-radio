@@ -17,6 +17,7 @@ class RadioAudioHandler extends BaseAudioHandler {
     final key = '${st?.id}|${engine.nowTitle}|${engine.want}|${engine.state}';
     if (key == _lastKey) return;
     _lastKey = key;
+    engine.addLog('értesítés / médiamunkamenet frissítése (${engine.want ? 'szól' : 'áll'})');
 
     if (st != null) {
       final hasSong = engine.songTitle.isNotEmpty;
