@@ -189,7 +189,7 @@ class MainActivity : AudioServiceActivity() {
         var wpk = -9600
         var wrms = -9600
         try {
-            if (v.waveForm(wave) == Visualizer.SUCCESS) {
+            if (v.getWaveForm(wave) == Visualizer.SUCCESS) {
                 var mx = 0
                 var sum = 0.0
                 for (b in wave) {
