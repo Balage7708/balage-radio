@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ezekre a kód csak név alapján hivatkozik (értesítés-ikon), ezért a fordító ne takarítsa ki őket.
+     Enélkül régebbi Androidon (pl. 8.x fejegység) a lejátszás indításakor összeomlik az app. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_radio,@mipmap/ic_launcher"
+    tools:shrinkMode="safe" />
