@@ -27,6 +27,9 @@ double _db(double lin) => lin > 0.0000001 ? 20 * log(lin) / ln10 : -99.0;
 
 class AndroidMeter implements NativeMeter {
   static const _ch = MethodChannel('balage/meter');
+
+  /// A lejátszómotor (mpv) hang-munkamenetének azonosítója; erre áll rá a mérő.
+  static int sessionId = 0;
   bool _started = false;
   DateTime _lastStart = DateTime.fromMillisecondsSinceEpoch(0);
   @override
@@ -38,14 +41,15 @@ class AndroidMeter implements NativeMeter {
       if (!_started) {
         if (DateTime.now().difference(_lastStart).inSeconds < 2) return null;
         _lastStart = DateTime.now();
-        final r = await _ch.invokeMethod<String>('start');
+        final r = await _ch.invokeMethod<String>('start', {'session': sessionId});
         status = r ?? '';
-        _started = r == 'ok';
+        _started = (r ?? '').startsWith('ok');
         if (!_started) return null;
       }
       final v = await _ch.invokeListMethod<int>('read');
       if (v == null || v.isEmpty) return null;
-      final peak = v[0] / 100.0; // millibel → dB
+      // [csúcs, rms, hullámforma-csúcs, hullámforma-rms] millibelben; a nagyobbik csúcsot használjuk
+      final peak = max(v[0], v.length > 2 ? v[2] : -9600) / 100.0;
       return [peak, peak];
     } catch (e) {
       status = '$e';

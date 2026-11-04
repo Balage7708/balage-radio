@@ -141,6 +141,14 @@ class _SettingsPageState extends State<SettingsPage> {
                     }
                   },
                 ),
+              if (Platform.isAndroid)
+                FutureBuilder<String?>(
+                  future: const MethodChannel('balage/system').invokeMethod<String>('lastEvent'),
+                  builder: (_, snap) => Text(
+                    'Utolsó észlelt bekapcsolás / ébredés: ${(snap.data ?? '').isEmpty ? 'még nem volt' : snap.data}',
+                    style: const TextStyle(color: BC.muted, fontSize: 12),
+                  ),
+                ),
             ]),
             _section('Kivezérlésjelző', [
               if (Platform.isAndroid)

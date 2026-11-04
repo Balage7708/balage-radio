@@ -93,6 +93,17 @@ Future<void> main() async {
     });
   }
 
+  if (Platform.isAndroid) {
+    // A fejegység alvásból ébredt (az app futva maradt): szóljon újra az utolsó adó.
+    const MethodChannel('balage/system').setMethodCallHandler((call) async {
+      if (call.method == 'wake') {
+        engine.addLog('Ébredés jelzés');
+        if (store.settings.autoStartBoot && !engine.want) await engine.resume();
+      }
+      return null;
+    });
+  }
+
   alarms = AlarmService(store, engine);
   await alarms.init();
 

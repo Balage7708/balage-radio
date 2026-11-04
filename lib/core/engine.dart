@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -122,6 +123,20 @@ class RadioEngine extends ChangeNotifier {
       'audio-display': 'no',
       'vid': 'no',
     };
+    // Androidon a lejátszó saját hang-munkamenetet kap, hogy a LED-jelző pontosan azt mérje.
+    if (Platform.isAndroid) {
+      try {
+        final sid = await const MethodChannel('balage/meter').invokeMethod<int>('session') ?? 0;
+        if (sid > 0) {
+          opts['ao'] = 'audiotrack';
+          opts['audiotrack-session-id'] = '$sid';
+          AndroidMeter.sessionId = sid;
+        }
+        _log('Hang-munkamenet: $sid');
+      } catch (e) {
+        _log('Hang-munkamenet hiba: $e');
+      }
+    }
     for (final kv in opts.entries) {
       try {
         await _np.setProperty(kv.key, kv.value);

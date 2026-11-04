@@ -10,15 +10,16 @@ import android.content.Intent
  */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-        val settings = prefs.getString("flutter.settings", null) ?: return
-        if (!settings.replace(" ", "").contains("\"autoStartBoot\":true")) return
+        val on = MainActivity.autoStartEnabled(context)
+        MainActivity.note(context, "bekapcsolás (${intent.action?.substringAfterLast('.')})" + if (on) "" else " – automatikus indítás kikapcsolva")
+        if (!on) return
         val launch = Intent(context, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
         }
         try {
             context.startActivity(launch)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            MainActivity.note(context, "bekapcsolás – indítás sikertelen: ${e.message}")
         }
     }
 }
